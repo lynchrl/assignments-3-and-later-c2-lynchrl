@@ -113,7 +113,6 @@ int main(int argc, char *argv[])
 
         // Buffer to store data up to a newline character. We will read data in BUFFER_SIZE
         // chunks and write to file when a newline is encountered.
-        // TODO: Use valgrind to check for memory leaks.
         char *data_buffer = malloc(BUFFER_SIZE);
         if (data_buffer == NULL)
         {
@@ -192,6 +191,7 @@ int main(int argc, char *argv[])
                         perror("open");
                         syslog(LOG_USER | LOG_ERR, "Error opening file (%s) [%s]", FILENAME, strerror(errno));
                         close(clfd);
+                        free(data_buffer);
                         continue;
                     }
                     while ((n = read(fd, read_buffer, BUFFER_SIZE)) > 0)
@@ -214,6 +214,7 @@ int main(int argc, char *argv[])
                 }
             }
         }
+        free(data_buffer);
         if (n < 0)
         {
             perror("Error reading from socket");
