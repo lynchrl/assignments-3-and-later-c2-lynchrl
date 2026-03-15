@@ -18,6 +18,8 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include "aesdsocket.h"
+
 #define SERVER_PORT 9000
 #define BUFFER_SIZE 1024
 #define FILENAME "/var/tmp/aesdsocketdata"
@@ -25,7 +27,7 @@
 static void signal_handler(int signum)
 {
     int errno_saved = errno;
-    syslog(LOG_USER | LOG_INFO, "Caught signal, exiting");
+    syslog(LOG_USER | LOG_DEBUG, "Caught signal, exiting");
     if (unlink(FILENAME) < 0)
     {
         perror("unlink");
@@ -37,12 +39,19 @@ static void signal_handler(int signum)
 
 int main(int argc, char *argv[])
 {
+    if (argc > 2)
+    {
+        fprintf(stdout, "Usage: %s [-d]\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
     int sockfd, clfd;
     socklen_t clilen;
     char read_buffer[BUFFER_SIZE];
     struct sockaddr_in serv_addr, cli_addr;
     ssize_t n;
 
+    // Set up our signal handler for SIGINT or SIGTERM.
     struct sigaction new_action;
     memset(&new_action, 0, sizeof(struct sigaction));
     new_action.sa_handler = signal_handler;
@@ -75,7 +84,7 @@ int main(int argc, char *argv[])
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(SERVER_PORT);
 
-    // Bind socket to address.
+    // Bind socket to address. Need to cast sockaddr_in to sockaddr.
     if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
         perror("bind");
@@ -84,6 +93,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // Daemonize if the "-d" arg is set.
     if (argc > 1 && strcmp(argv[1], "-d") == 0)
     {
         if (daemon(0, 0) < 0)
@@ -116,7 +126,7 @@ int main(int argc, char *argv[])
         char *data_buffer = malloc(BUFFER_SIZE);
         if (data_buffer == NULL)
         {
-            perror("Error allocating buffer");
+            perror("malloc for data_buffer");
             syslog(LOG_USER | LOG_ERR, "Error allocating buffer [%s]", strerror(errno));
             close(clfd);
             continue; // Try to continue accepting new connections.
@@ -130,48 +140,30 @@ int main(int argc, char *argv[])
             // we need to malloc a larger buffer and copy the existing data over.
             for (ssize_t i = 0; i < n; i++)
             {
-                if (data_len < BUFFER_SIZE - 1)
+                // Grow data_buffer if necessary.
+                if (data_len >= BUFFER_SIZE)
                 {
-                    data_buffer[data_len++] = read_buffer[i];
-                }
-                else
-                {
-                    // Buffer overflow, we need to allocate a larger buffer.
                     size_t new_size = data_len + BUFFER_SIZE;
                     char *new_buffer = realloc(data_buffer, new_size);
                     if (new_buffer == NULL)
                     {
-                        perror("Error reallocating buffer");
+                        perror("realloc for data_buffer");
                         syslog(LOG_USER | LOG_ERR, "Error reallocating buffer [%s]", strerror(errno));
                         break; // Break out of the loop to close the connection
                     }
                     data_buffer = new_buffer;
-                    data_buffer[data_len++] = read_buffer[i];
                 }
+                data_buffer[data_len++] = read_buffer[i];
 
                 // If we encounter a newline character, write the data "packet" to file and reset the buffer.
                 if (read_buffer[i] == '\n')
                 {
-                    // Null-terminate the data buffer before writing to file.
-                    data_buffer[data_len] = '\0';
-
                     // Append data to file
-                    int fd = open(FILENAME, O_WRONLY | O_CREAT | O_APPEND, 0644);
-                    if (fd == -1)
+                    if (append_packet(FILENAME, data_buffer, data_len) != 0)
                     {
-                        perror("Error opening file (filename: " FILENAME ")");
-                        syslog(LOG_USER | LOG_ERR, "Error opening file [%s]: %s", strerror(errno), FILENAME);
+                        syslog(LOG_USER | LOG_ERR, "Error appending packet to %s", FILENAME);
                         break;
                     }
-                    ssize_t res = write(fd, data_buffer, data_len);
-                    if (res == -1)
-                    {
-                        perror("Error writing to file (filename: " FILENAME ")");
-                        syslog(LOG_USER | LOG_ERR, "Error writing to file [%s]: %s", strerror(errno), FILENAME);
-                        close(fd);
-                        break;
-                    }
-                    close(fd);
                     // syslog(LOG_USER | LOG_DEBUG, "Wrote <%s> to file <%s>", data_buffer, FILENAME);
                     // Reset data buffer for next line of input.
                     data_len = 0;
@@ -179,13 +171,13 @@ int main(int argc, char *argv[])
                     data_buffer = malloc(BUFFER_SIZE);
                     if (data_buffer == NULL)
                     {
-                        perror("Error allocating buffer");
+                        perror("malloc new data_buffer");
                         syslog(LOG_USER | LOG_ERR, "Error allocating buffer [%s]", strerror(errno));
                         break;
                     }
 
                     // Write full file contents back to client.
-                    fd = open(FILENAME, O_RDONLY);
+                    int fd = open(FILENAME, O_RDONLY);
                     if (fd < 0)
                     {
                         perror("open");
@@ -227,5 +219,26 @@ int main(int argc, char *argv[])
         syslog(LOG_USER | LOG_DEBUG, "Closed connection from %s", inet_ntoa(cli_addr.sin_addr));
     }
     closelog();
+    return 0;
+}
+
+int append_packet(const char *fname, const char *buf, size_t len)
+{
+    int fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd == -1)
+    {
+        perror("Error opening file (filename: " FILENAME ")");
+        syslog(LOG_USER | LOG_ERR, "Error opening file [%s]: %s", strerror(errno), FILENAME);
+        return -1;
+    }
+    ssize_t res = write(fd, buf, len);
+    if (res == -1)
+    {
+        perror("Error writing to file (filename: " FILENAME ")");
+        syslog(LOG_USER | LOG_ERR, "Error writing to file [%s]: %s", strerror(errno), FILENAME);
+        close(fd);
+        return -1;
+    }
+    close(fd);
     return 0;
 }
