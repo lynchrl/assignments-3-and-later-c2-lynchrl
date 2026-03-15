@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Daemonize if the "-d" arg is set.
+    // Daemonize if the "-d" arg is set. LSP Ch. 5.
     if (argc > 1 && strcmp(argv[1], "-d") == 0)
     {
         if (daemon(0, 0) < 0)
