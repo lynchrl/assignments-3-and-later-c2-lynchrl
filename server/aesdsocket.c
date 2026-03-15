@@ -84,6 +84,17 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (argc > 1 && strcmp(argv[1], "-d") == 0)
+    {
+        if (daemon(0, 0) < 0)
+        {
+            perror("daemon");
+            syslog(LOG_USER | LOG_ERR, "Error daemonizing server process [%s]", strerror(errno));
+            close(sockfd);
+            return 1;
+        }
+    }
+
     // Listen for incoming connections. Backlog is 5 for up to 5 pending connections.
     listen(sockfd, 5);
     syslog(LOG_USER | LOG_DEBUG, "Server started on port %d", SERVER_PORT);
@@ -100,7 +111,8 @@ int main(int argc, char *argv[])
         }
         syslog(LOG_USER | LOG_DEBUG, "Accepted connection from %s", inet_ntoa(cli_addr.sin_addr));
 
-        // Buffer to store data up to a newline character. We will read data in chunks and write to file when a newline is encountered.
+        // Buffer to store data up to a newline character. We will read data in BUFFER_SIZE
+        // chunks and write to file when a newline is encountered.
         // TODO: Use valgrind to check for memory leaks.
         char *data_buffer = malloc(BUFFER_SIZE);
         if (data_buffer == NULL)
