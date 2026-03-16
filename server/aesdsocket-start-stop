@@ -1,0 +1,18 @@
+#!/bin/sh
+
+PROG=/usr/bin/aesdsocket
+
+case "$1" in
+    start)
+        echo "Starting aesdsocket service"
+        start-stop-daemon --start ${PROG} -- -d
+        ;;
+    stop)
+        echo "Stopping aesdsocket service"
+        start-stop-daemon --stop ${PROG} -- -d
+        ;;
+    *)
+        echo "Usage: $0 (start|stop)"
+        exit 1
+        ;;
+esac
