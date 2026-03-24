@@ -31,4 +31,15 @@ typedef struct conn_node
     nodes;
 } conn_node_t;
 
+typedef SLIST_HEAD(conn_node_s, conn_node) conn_node_head_t;
+
+typedef struct server_info
+{
+    // Singly-linked list head for tracking client handler threads.
+    conn_node_head_t conn_node_head;
+
+    // Shared mutex for output file synchronization.
+    pthread_mutex_t file_mutex;
+} server_info_t;
+
 #endif

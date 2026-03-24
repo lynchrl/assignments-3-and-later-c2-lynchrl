@@ -21,8 +21,6 @@
 #include "aesdsocket.h"
 #include "handler.h"
 
-typedef SLIST_HEAD(conn_node_s, conn_node) conn_node_head_t;
-
 static void signal_handler(int signum)
 {
     int errno_saved = errno;
@@ -36,6 +34,39 @@ static void signal_handler(int signum)
     exit(EXIT_SUCCESS);
 }
 
+static void alarm_handler(int sig, siginfo_t *si, void *uc)
+{
+    if (sig != SIGALRM)
+    {
+        syslog(LOG_USER | LOG_ERR, "Received unexpected signal %d in alarm_handler", sig);
+        return;
+    }
+    syslog(LOG_USER | LOG_DEBUG, "Alarm triggered, writing timestamp to file.");
+    (void)sig;
+    (void)uc;
+    server_info_t *server_info = (server_info_t *)si->si_value.sival_ptr;
+    pthread_mutex_lock(&server_info->file_mutex);
+    // Based on example from https://man7.org/linux/man-pages/man3/strftime.3.html
+    // Per assignment, use RFC 2822 format.
+    char timestamp[100];
+    time_t now = time(NULL);
+    struct tm *tm_info = localtime(&now);
+    strftime(timestamp, sizeof(timestamp), "timestamp:%a, %d %b %Y %T %z", tm_info);
+    // Append timestamp to file with newline.
+    int fd = open(FILENAME, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0)
+    {
+        perror("open");
+        syslog(LOG_USER | LOG_ERR, "Error opening file <%s> for timestamp writing [%s]", FILENAME, strerror(errno));
+        pthread_mutex_unlock(&server_info->file_mutex);
+        return;
+    }
+    dprintf(fd, "%s\n", timestamp);
+    close(fd);
+
+    pthread_mutex_unlock(&server_info->file_mutex);
+}
+
 int main(int argc, char *argv[])
 {
     if (argc > 2)
@@ -44,13 +75,16 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Singly-linked list for client handler thread tracking.
-    conn_node_head_t conn_node_head;
-    SLIST_INIT(&conn_node_head);
+    // Open syslog for logging
+    openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
+
+    server_info_t server_info;
+    SLIST_INIT(&server_info.conn_node_head);
 
     // Shared mutex for output file synchronization.
     pthread_mutex_t file_mutex;
     pthread_mutex_init(&file_mutex, NULL);
+    server_info.file_mutex = file_mutex;
 
     int sockfd, clfd;
     socklen_t clilen;
@@ -64,15 +98,53 @@ int main(int argc, char *argv[])
     {
         perror("Setting SIGINT handler");
         syslog(LOG_USER | LOG_ERR, "Error registering SIGINT handler [%s]", strerror(errno));
+        exit(EXIT_FAILURE);
     }
     if (sigaction(SIGTERM, &new_action, NULL) != 0)
     {
         perror("Setting SIGTERM handler");
         syslog(LOG_USER | LOG_ERR, "Error registering SIGTERM handler [%s]", strerror(errno));
+        exit(EXIT_FAILURE);
     }
 
-    // Open syslog for logging
-    openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
+    // Set up signal handler for SIGALRM for timestamp writing.
+    struct sigaction alrm_action;
+    memset(&alrm_action, 0, sizeof(struct sigaction));
+    alrm_action.sa_sigaction = alarm_handler;
+    alrm_action.sa_flags = SA_SIGINFO | SA_RESTART; // SA_RESTART to allow accept() below to be restarted.
+    if (sigaction(SIGALRM, &alrm_action, NULL) != 0)
+    {
+        perror("Setting SIGALRM handler");
+        syslog(LOG_USER | LOG_ERR, "Error registering SIGALRM handler [%s]", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // Set up timer for SIGALRM every 10 seconds.
+    struct itimerspec timer_spec;
+    timer_spec.it_value.tv_sec = 10;
+    timer_spec.it_value.tv_nsec = 0;
+    timer_spec.it_interval.tv_sec = 10;
+    timer_spec.it_interval.tv_nsec = 0;
+    struct sigevent sev;
+    memset(&sev, 0, sizeof(struct sigevent));
+    sev.sigev_notify = SIGEV_SIGNAL;
+    sev.sigev_signo = SIGALRM;
+    // Pass pointer to server_info so we can reference the file mutex and any other shared state in
+    // the timer handler.
+    sev.sigev_value.sival_ptr = &server_info;
+    timer_t timer_id;
+    if (timer_create(CLOCK_MONOTONIC, &sev, &timer_id) != 0)
+    {
+        perror("timer_create");
+        syslog(LOG_USER | LOG_ERR, "Error creating timer for SIGALRM [%s]", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+    if (timer_settime(timer_id, 0, &timer_spec, NULL) != 0)
+    {
+        perror("timer_settime");
+        syslog(LOG_USER | LOG_ERR, "Error setting timer for SIGALRM [%s]", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
 
     // Create socket for IPv4
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -80,7 +152,7 @@ int main(int argc, char *argv[])
     {
         perror("socket");
         syslog(LOG_USER | LOG_ERR, "Error opening socket [%s]", strerror(errno));
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
     // Set up server address structure explicitly for IPv4.
@@ -95,7 +167,7 @@ int main(int argc, char *argv[])
         perror("bind");
         syslog(LOG_USER | LOG_ERR, "bind() error [%s]", strerror(errno));
         close(sockfd);
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
     // Daemonize if the "-d" arg is set. LSP Ch. 5.
@@ -106,7 +178,7 @@ int main(int argc, char *argv[])
             perror("daemon");
             syslog(LOG_USER | LOG_ERR, "Error daemonizing server process [%s]", strerror(errno));
             close(sockfd);
-            return 1;
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -139,14 +211,14 @@ int main(int argc, char *argv[])
         new_node->clfd = clfd;
         new_node->file_mutex = &file_mutex;
         new_node->done = false;
-        SLIST_INSERT_HEAD(&conn_node_head, new_node, nodes);
+        SLIST_INSERT_HEAD(&server_info.conn_node_head, new_node, nodes);
 
         // Create thread to handle the connection. Pass pointer to conn_node as arg.
         if (pthread_create(&new_node->thread_id, NULL, handle_connection, new_node) != 0)
         {
             perror("pthread_create");
             syslog(LOG_USER | LOG_ERR, "Error creating thread for new connection [%s]", strerror(errno));
-            SLIST_REMOVE(&conn_node_head, new_node, conn_node, nodes);
+            SLIST_REMOVE(&server_info.conn_node_head, new_node, conn_node, nodes);
             free(new_node);
             close(clfd);
             continue;
@@ -154,12 +226,12 @@ int main(int argc, char *argv[])
 
         // Use SLIST_FOREACH_SAFE to iterate through the list and clean up any nodes whose threads have completed.
         conn_node_t *cur_node, *tmp_node;
-        SLIST_FOREACH_SAFE(cur_node, &conn_node_head, nodes, tmp_node)
+        SLIST_FOREACH_SAFE(cur_node, &server_info.conn_node_head, nodes, tmp_node)
         {
             if (cur_node->done)
             {
                 pthread_join(cur_node->thread_id, NULL);
-                SLIST_REMOVE(&conn_node_head, cur_node, conn_node, nodes);
+                SLIST_REMOVE(&server_info.conn_node_head, cur_node, conn_node, nodes);
                 free(cur_node);
             }
         }
