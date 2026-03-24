@@ -21,24 +21,22 @@
 #include "aesdsocket.h"
 #include "handler.h"
 
+volatile sig_atomic_t server_running = 1;
+
 static void signal_handler(int signum)
 {
-    int errno_saved = errno;
-    syslog(LOG_USER | LOG_DEBUG, "Caught signal, exiting");
-    if (unlink(FILENAME) < 0)
+    if (signum != SIGINT && signum != SIGTERM)
     {
-        perror("unlink");
-        syslog(LOG_USER | LOG_ERR, "Error unlinking file <%s> [%s]", FILENAME, strerror(errno));
+        return;
     }
-    errno = errno_saved;
-    exit(EXIT_SUCCESS);
+    syslog(LOG_USER | LOG_DEBUG, "Caught signal, exiting");
+    server_running = 0;
 }
 
 static void alarm_handler(int sig, siginfo_t *si, void *uc)
 {
     if (sig != SIGALRM)
     {
-        syslog(LOG_USER | LOG_ERR, "Received unexpected signal %d in alarm_handler", sig);
         return;
     }
     syslog(LOG_USER | LOG_DEBUG, "Alarm triggered, writing timestamp to file.");
@@ -186,12 +184,18 @@ int main(int argc, char *argv[])
     listen(sockfd, 5);
     syslog(LOG_USER | LOG_DEBUG, "Server started on port %d", SERVER_PORT);
 
-    while (1)
+    while (server_running)
     {
         clilen = sizeof(cli_addr);
         clfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen);
         if (clfd < 0)
         {
+            // Check for accept() interruption due to signal. Break out if so and
+            // we're shutting down.
+            if (errno == EINTR && !server_running)
+            {
+                break;
+            }
             perror("accept");
             syslog(LOG_USER | LOG_ERR, "accept() error [%s]", strerror(errno));
             continue; // Try to continue accepting new connections.
@@ -237,7 +241,24 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Final cleanup of any remaining connection nodes and threads.
+    conn_node_t *cur_node, *tmp_node;
+    SLIST_FOREACH_SAFE(cur_node, &server_info.conn_node_head, nodes, tmp_node)
+    {
+        if (cur_node->done)
+        {
+            pthread_join(cur_node->thread_id, NULL);
+            SLIST_REMOVE(&server_info.conn_node_head, cur_node, conn_node, nodes);
+            free(cur_node);
+        }
+    }
+    close(sockfd);
     pthread_mutex_destroy(&file_mutex);
+    if (unlink(FILENAME) < 0)
+    {
+        perror("unlink");
+        syslog(LOG_USER | LOG_ERR, "Error unlinking file <%s> [%s]", FILENAME, strerror(errno));
+    }
     closelog();
     return 0;
 }
