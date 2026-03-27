@@ -117,7 +117,10 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     struct aesd_buffer_entry *removed = aesd_circular_buffer_add_entry(&dev->buffer, entry);
     if (removed)
     {
+        PDEBUG("freeing entry buffptr %p and size %zu", removed->buffptr, removed->size);
+        PDEBUG("buffptr points to \"%s\"", removed->buffptr);
         kfree((char *)removed->buffptr);
+        PDEBUG("freeing entry %p", removed);
         kfree(removed);
     }
 

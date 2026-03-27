@@ -60,7 +60,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_add_entry(struct aesd_circular_bu
     struct aesd_buffer_entry *overwritten_entry = NULL;
     if (buffer->full)
     {
-        overwritten_entry = &buffer->entry[buffer->out_offs];
+        overwritten_entry = &buffer->entry[buffer->in_offs];
         buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
     buffer->entry[buffer->in_offs] = *add_entry;
