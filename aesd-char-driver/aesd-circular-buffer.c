@@ -55,12 +55,12 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
  * @return the struct aesd_buffer_entry that was overwritten if the buffer was full, or
  * NULL if no buffer entry was overwritten (the buffer was not full).
  */
-struct aesd_buffer_entry *aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
+const char *aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    struct aesd_buffer_entry *overwritten_entry = NULL;
+    const char *removed = NULL;
     if (buffer->full)
     {
-        overwritten_entry = &buffer->entry[buffer->in_offs];
+        removed = buffer->entry[buffer->in_offs].buffptr;
         buffer->out_offs = (buffer->out_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
     }
     buffer->entry[buffer->in_offs] = *add_entry;
@@ -69,7 +69,7 @@ struct aesd_buffer_entry *aesd_circular_buffer_add_entry(struct aesd_circular_bu
     {
         buffer->full = true;
     }
-    return overwritten_entry;
+    return removed;
 }
 
 /**

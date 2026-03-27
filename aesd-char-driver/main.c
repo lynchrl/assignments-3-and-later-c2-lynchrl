@@ -92,36 +92,27 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
      */
     struct aesd_dev *dev = filp->private_data;
     mutex_lock(&dev->lock);
-    struct aesd_buffer_entry *entry = kmalloc(sizeof(struct aesd_buffer_entry), GFP_KERNEL);
-    if (!entry)
+    struct aesd_buffer_entry entry;
+    entry.buffptr = kmalloc(count, GFP_KERNEL);
+    if (!entry.buffptr)
     {
         retval = -ENOMEM;
         goto write_cleanup;
     }
-    entry->buffptr = kmalloc(count, GFP_KERNEL);
-    if (!entry->buffptr)
+    if (copy_from_user((char *)entry.buffptr, buf, count))
     {
-        kfree(entry);
-        retval = -ENOMEM;
-        goto write_cleanup;
-    }
-    if (copy_from_user((char *)entry->buffptr, buf, count))
-    {
-        kfree(entry->buffptr);
-        kfree(entry);
+        kfree(entry.buffptr);
         retval = -EFAULT;
         goto write_cleanup;
     }
-    entry->size = count;
+    entry.size = count;
     retval = count;
-    struct aesd_buffer_entry *removed = aesd_circular_buffer_add_entry(&dev->buffer, entry);
+    const char *removed = aesd_circular_buffer_add_entry(&dev->buffer, &entry);
     if (removed)
     {
-        PDEBUG("freeing entry buffptr %p and size %zu", removed->buffptr, removed->size);
-        PDEBUG("buffptr points to \"%s\"", removed->buffptr);
-        kfree((char *)removed->buffptr);
-        PDEBUG("freeing entry %p", removed);
-        kfree(removed);
+        PDEBUG("freeing entry buffptr %p and size %zu", removed, entry.size);
+        PDEBUG("buffptr points to \"%s\"", removed);
+        kfree((char *)removed);
     }
 
 write_cleanup:
