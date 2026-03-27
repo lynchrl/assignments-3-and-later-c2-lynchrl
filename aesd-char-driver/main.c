@@ -113,8 +113,14 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         goto write_cleanup;
     }
     entry->size = count;
-    aesd_circular_buffer_add_entry(&dev->buffer, entry);
     retval = count;
+    struct aesd_buffer_entry *removed = aesd_circular_buffer_add_entry(&dev->buffer, entry);
+    if (removed)
+    {
+        kfree((char *)removed->buffptr);
+        kfree(removed);
+    }
+
 write_cleanup:
     mutex_unlock(&dev->lock);
     return retval;
