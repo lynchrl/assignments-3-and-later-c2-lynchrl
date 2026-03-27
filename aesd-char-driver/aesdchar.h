@@ -35,8 +35,8 @@ struct aesd_dev
      // Circlular buffer backing the device.
      struct aesd_circular_buffer buffer;
 
-     // Mutex to protect access to the buffer.
-     struct mutex buffer_mutex;
+     // Mutex to protect the aesd_dev struct.
+     struct mutex lock;
 };
 
 #endif /* AESD_CHAR_DRIVER_AESDCHAR_H_ */
