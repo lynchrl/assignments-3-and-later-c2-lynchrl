@@ -93,7 +93,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     struct aesd_dev *dev = filp->private_data;
     mutex_lock(&dev->lock);
     struct aesd_buffer_entry entry;
-    entry.buffptr = kmalloc(count, GFP_KERNEL);
+    entry.buffptr = kzalloc(count, GFP_KERNEL);
     if (!entry.buffptr)
     {
         retval = -ENOMEM;
