@@ -103,12 +103,16 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         dev->current_write_entry.buffptr = kzalloc(count, GFP_KERNEL);
         if (!dev->current_write_entry.buffptr)
         {
+            PDEBUG("kzalloc failed");
             retval = -ENOMEM;
             goto write_cleanup;
         }
         if (copy_from_user((char *)dev->current_write_entry.buffptr, buf, count))
         {
+            PDEBUG("copy_from_user failed, freeing current_write_entry.buffptr");
             kfree(dev->current_write_entry.buffptr);
+            dev->current_write_entry.buffptr = NULL;
+            dev->current_write_entry.size = 0;
             retval = -EFAULT;
             goto write_cleanup;
         }
@@ -120,13 +124,16 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         if (!new_buffptr)
         {
             // kfree(dev->current_write_entry.buffptr);
+            PDEBUG("krealloc failed, keeping current_write_entry.buffptr and size");
             retval = -ENOMEM;
             goto write_cleanup;
         }
         dev->current_write_entry.buffptr = new_buffptr;
         if (copy_from_user((char *)dev->current_write_entry.buffptr + dev->current_write_entry.size, buf, count))
         {
+            PDEBUG("copy_from_user failed, freeing current_write_entry.buffptr");
             kfree(dev->current_write_entry.buffptr);
+            dev->current_write_entry.buffptr = NULL;
             dev->current_write_entry.size = 0;
             retval = -EFAULT;
             goto write_cleanup;
@@ -137,15 +144,16 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     char *newline = memchr(dev->current_write_entry.buffptr, '\n', dev->current_write_entry.size);
     if (newline)
     {
+        PDEBUG("newline found in current_write_entry.buffptr at offset %zd", newline - dev->current_write_entry.buffptr);
         struct aesd_buffer_entry entry;
         entry.buffptr = dev->current_write_entry.buffptr;
         entry.size = dev->current_write_entry.size;
         retval = entry.size;
+        PDEBUG("adding entry with buffptr %p and size %zu to circular buffer", entry.buffptr, entry.size);
         const char *removed = aesd_circular_buffer_add_entry(&dev->buffer, &entry);
         if (removed)
         {
             PDEBUG("freeing entry buffptr %p and size %zu", removed, entry.size);
-            PDEBUG("buffptr points to \"%s\"", removed);
             kfree((char *)removed);
         }
         dev->current_write_entry.buffptr = NULL;
