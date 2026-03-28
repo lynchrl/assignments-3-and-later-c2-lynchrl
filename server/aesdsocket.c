@@ -18,11 +18,6 @@
 #include <fcntl.h>
 #include <errno.h>
 
-// Default enable use of the char device
-#ifndef USE_AESD_CHAR_DEVICE
-#define USE_AESD_CHAR_DEVICE 1
-#endif
-
 #include "aesdsocket.h"
 #include "handler.h"
 
@@ -96,6 +91,9 @@ int main(int argc, char *argv[])
         fprintf(stdout, "Usage: %s [-d]\n", argv[0]);
         exit(EXIT_FAILURE);
     }
+#ifdef USE_AESD_CHAR_DEVICE
+    printf("Running using ASED char device\n");
+#endif
 
     // Open syslog for logging
     openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);

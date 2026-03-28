@@ -11,9 +11,9 @@
 #define BUFFER_SIZE 1024
 
 #ifdef USE_AESD_CHAR_DEVICE
-#define FILENAME "/var/tmp/aesdsocketdata"
-#else
 #define FILENAME "/dev/aesdchar"
+#else
+#define FILENAME "/var/tmp/aesdsocketdata"
 #endif
 
 typedef struct conn_node
