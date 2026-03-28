@@ -56,7 +56,10 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
      * TODO: handle read
      */
     struct aesd_dev *dev = filp->private_data;
-    mutex_lock(&dev->lock);
+    if (mutex_lock_interruptible(&dev->lock))
+    {
+        return -ERESTARTSYS;
+    }
     size_t entry_offset_byte;
     struct aesd_buffer_entry *entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->buffer, *f_pos, &entry_offset_byte);
     if (!entry)
@@ -91,30 +94,67 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
      * TODO: handle write
      */
     struct aesd_dev *dev = filp->private_data;
-    mutex_lock(&dev->lock);
-    struct aesd_buffer_entry entry;
-    entry.buffptr = kzalloc(count, GFP_KERNEL);
-    if (!entry.buffptr)
+    if (mutex_lock_interruptible(&dev->lock))
     {
-        retval = -ENOMEM;
-        goto write_cleanup;
+        return -ERESTARTSYS;
     }
-    if (copy_from_user((char *)entry.buffptr, buf, count))
+    if (dev->current_write_entry.buffptr == NULL)
     {
-        kfree(entry.buffptr);
-        retval = -EFAULT;
-        goto write_cleanup;
+        dev->current_write_entry.buffptr = kzalloc(count, GFP_KERNEL);
+        if (!dev->current_write_entry.buffptr)
+        {
+            retval = -ENOMEM;
+            goto write_cleanup;
+        }
+        if (copy_from_user((char *)dev->current_write_entry.buffptr, buf, count))
+        {
+            kfree(dev->current_write_entry.buffptr);
+            retval = -EFAULT;
+            goto write_cleanup;
+        }
+        dev->current_write_entry.size = count;
     }
-    entry.size = count;
-    retval = count;
-    const char *removed = aesd_circular_buffer_add_entry(&dev->buffer, &entry);
-    if (removed)
+    else
     {
-        PDEBUG("freeing entry buffptr %p and size %zu", removed, entry.size);
-        PDEBUG("buffptr points to \"%s\"", removed);
-        kfree((char *)removed);
+        char *new_buffptr = krealloc((char *)dev->current_write_entry.buffptr, dev->current_write_entry.size + count, GFP_KERNEL);
+        if (!new_buffptr)
+        {
+            // kfree(dev->current_write_entry.buffptr);
+            retval = -ENOMEM;
+            goto write_cleanup;
+        }
+        dev->current_write_entry.buffptr = new_buffptr;
+        if (copy_from_user((char *)dev->current_write_entry.buffptr + dev->current_write_entry.size, buf, count))
+        {
+            kfree(dev->current_write_entry.buffptr);
+            dev->current_write_entry.size = 0;
+            retval = -EFAULT;
+            goto write_cleanup;
+        }
+        dev->current_write_entry.size += count;
     }
 
+    char *newline = memchr(dev->current_write_entry.buffptr, '\n', dev->current_write_entry.size);
+    if (newline)
+    {
+        struct aesd_buffer_entry entry;
+        entry.buffptr = dev->current_write_entry.buffptr;
+        entry.size = dev->current_write_entry.size;
+        retval = entry.size;
+        const char *removed = aesd_circular_buffer_add_entry(&dev->buffer, &entry);
+        if (removed)
+        {
+            PDEBUG("freeing entry buffptr %p and size %zu", removed, entry.size);
+            PDEBUG("buffptr points to \"%s\"", removed);
+            kfree((char *)removed);
+        }
+        dev->current_write_entry.buffptr = NULL;
+        dev->current_write_entry.size = 0;
+    }
+    else
+    {
+        retval = count;
+    }
 write_cleanup:
     mutex_unlock(&dev->lock);
     return retval;

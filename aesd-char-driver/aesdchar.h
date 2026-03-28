@@ -35,6 +35,10 @@ struct aesd_dev
      // Circlular buffer backing the device.
      struct aesd_circular_buffer buffer;
 
+     // "Currentt" buffer entry for writes that have not yet been added to the
+     // circular buffer to store non-newline terminated writes.
+     struct aesd_buffer_entry current_write_entry;
+
      // Mutex to protect the aesd_dev struct.
      struct mutex lock;
 };
