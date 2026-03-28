@@ -95,6 +95,12 @@ int main(int argc, char *argv[])
     // Open syslog for logging
     openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
 
+#ifdef USE_AESD_CHAR_DEVICE
+    syslog(LOG_USER | LOG_DEBUG, "USE_AESD_CHAR_DEVICE IS SET. Using %s", FILENAME);
+#else
+    syslog(LOG_USER | LOG_DEBUG, "USE_AESD_CHAR_DEVICE IS NOT SET. Using %s", FILENAME);
+#endif
+
     server_info_t server_info;
     SLIST_INIT(&server_info.conn_node_head);
 

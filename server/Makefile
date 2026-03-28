@@ -3,8 +3,10 @@
 # debugging symbols in the executable.
 
 CC ?= $(CROSS_COMPILE)gcc
-CFLAGS ?= -g -Wall -Werror -DUSE_AESD_CHAR_DEVICE
+CFLAGS ?= -g -Wall -Werror
 LDFLAGS ?= -lpthread
+
+CFLAGS += -DUSE_AESD_CHAR_DEVICE
 
 all: aesdsocket
 
