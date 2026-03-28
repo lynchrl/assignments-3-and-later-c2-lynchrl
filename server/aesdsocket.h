@@ -9,7 +9,12 @@
 
 #define SERVER_PORT 9000
 #define BUFFER_SIZE 1024
+
+#ifdef USE_AESD_CHAR_DEVICE
 #define FILENAME "/var/tmp/aesdsocketdata"
+#else
+#define FILENAME "/dev/aesdchar"
+#endif
 
 typedef struct conn_node
 {
@@ -20,8 +25,10 @@ typedef struct conn_node
     // Client socket file descriptor for this connection.
     int clfd;
 
+#ifndef USE_AESD_CHAR_DEVICE
     // Mutex for output file access. Passed by the caller.
     pthread_mutex_t *file_mutex;
+#endif
 
     // Indicates whether this connection has completed processing
     // and can be safely cleaned up.

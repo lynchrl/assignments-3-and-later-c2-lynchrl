@@ -5,6 +5,6 @@
 #include "aesdsocket.h"
 
 void *handle_connection(void *arg);
-int append_packet(const char *fname, const char *buf, size_t len, pthread_mutex_t *file_mutex);
+int append_packet(const char *fname, const char *buf, size_t len);
 
 #endif // HANDLER_H

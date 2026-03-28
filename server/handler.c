@@ -56,11 +56,20 @@ void *handle_connection(void *arg)
             if (read_buffer[i] == '\n')
             {
                 // Append data to file
-                if (append_packet(FILENAME, data_buffer, data_len, conn_info->file_mutex) != 0)
+#ifndef USE_AESD_CHAR_DEVICE
+                pthread_mutex_lock(conn_info->file_mutex);
+#endif
+                if (append_packet(FILENAME, data_buffer, data_len) != 0)
                 {
                     syslog(LOG_USER | LOG_ERR, "Error appending packet to %s", FILENAME);
+#ifndef USE_AESD_CHAR_DEVICE
+                    pthread_mutex_unlock(conn_info->file_mutex);
+#endif
                     break;
                 }
+#ifndef USE_AESD_CHAR_DEVICE
+                pthread_mutex_unlock(conn_info->file_mutex);
+#endif
                 // syslog(LOG_USER | LOG_DEBUG, "Wrote <%s> to file <%s>", data_buffer, FILENAME);
                 // Reset data buffer for next line of input.
                 data_len = 0;
@@ -120,15 +129,13 @@ void *handle_connection(void *arg)
     return NULL;
 }
 
-int append_packet(const char *fname, const char *buf, size_t len, pthread_mutex_t *file_mutex)
+int append_packet(const char *fname, const char *buf, size_t len)
 {
-    pthread_mutex_lock(file_mutex);
     int fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd == -1)
     {
         perror("Error opening file (filename: " FILENAME ")");
         syslog(LOG_USER | LOG_ERR, "Error opening file [%s]: %s", strerror(errno), FILENAME);
-        pthread_mutex_unlock(file_mutex);
         return -1;
     }
     ssize_t res = write(fd, buf, len);
@@ -137,10 +144,8 @@ int append_packet(const char *fname, const char *buf, size_t len, pthread_mutex_
         perror("Error writing to file (filename: " FILENAME ")");
         syslog(LOG_USER | LOG_ERR, "Error writing to file [%s]: %s", strerror(errno), FILENAME);
         close(fd);
-        pthread_mutex_unlock(file_mutex);
         return -1;
     }
     close(fd);
-    pthread_mutex_unlock(file_mutex);
     return 0;
 }

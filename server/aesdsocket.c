@@ -18,6 +18,11 @@
 #include <fcntl.h>
 #include <errno.h>
 
+// Default enable use of the char device
+#ifndef USE_AESD_CHAR_DEVICE
+#define USE_AESD_CHAR_DEVICE 1
+#endif
+
 #include "aesdsocket.h"
 #include "handler.h"
 
@@ -33,6 +38,7 @@ static void signal_handler(int signum)
     server_running = 0;
 }
 
+#ifndef USE_AESD_CHAR_DEVICE
 static void alarm_handler(int sig, siginfo_t *si, void *uc)
 {
     if (sig != SIGALRM)
@@ -64,6 +70,7 @@ static void alarm_handler(int sig, siginfo_t *si, void *uc)
 
     pthread_mutex_unlock(&server_info->file_mutex);
 }
+#endif
 
 int reap_threads(server_info_t *server_info)
 {
@@ -158,6 +165,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+#ifndef USE_AESD_CHAR_DEVICE
     // Set up signal handler for SIGALRM for timestamp writing.
     struct sigaction alrm_action;
     memset(&alrm_action, 0, sizeof(struct sigaction));
@@ -196,6 +204,7 @@ int main(int argc, char *argv[])
         syslog(LOG_USER | LOG_ERR, "Error setting timer for SIGALRM [%s]", strerror(errno));
         exit(EXIT_FAILURE);
     }
+#endif
 
     // Listen for incoming connections. Backlog is 5 for up to 5 pending connections.
     listen(sockfd, 5);
@@ -230,7 +239,9 @@ int main(int argc, char *argv[])
         }
         new_node->cli_addr = cli_addr;
         new_node->clfd = clfd;
+#ifndef USE_AESD_CHAR_DEVICE
         new_node->file_mutex = &file_mutex;
+#endif
         new_node->done = false;
         SLIST_INSERT_HEAD(&server_info.conn_node_head, new_node, nodes);
 
@@ -250,12 +261,14 @@ int main(int argc, char *argv[])
 
     reap_threads(&server_info);
     close(sockfd);
+#ifndef USE_AESD_CHAR_DEVICE
     pthread_mutex_destroy(&file_mutex);
     if (unlink(FILENAME) < 0)
     {
         perror("unlink");
         syslog(LOG_USER | LOG_ERR, "Error unlinking file <%s> [%s]", FILENAME, strerror(errno));
     }
+#endif
     closelog();
     return 0;
 }
