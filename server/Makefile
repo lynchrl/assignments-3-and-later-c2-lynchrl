@@ -5,7 +5,7 @@
 CC ?= $(CROSS_COMPILE)gcc
 CFLAGS ?= -g -Wall -Werror
 LDFLAGS ?= -lpthread
-CPPFLAGS += -DUSE_AESD_CHAR_DEVICE
+override CPPFLAGS += -DUSE_AESD_CHAR_DEVICE
 
 all: aesdsocket
 
