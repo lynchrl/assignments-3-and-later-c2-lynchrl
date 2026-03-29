@@ -5,19 +5,18 @@
 CC ?= $(CROSS_COMPILE)gcc
 CFLAGS ?= -g -Wall -Werror
 LDFLAGS ?= -lpthread
-
-CFLAGS += -DUSE_AESD_CHAR_DEVICE
+CPPFLAGS += -DUSE_AESD_CHAR_DEVICE
 
 all: aesdsocket
 
 aesdsocket: aesdsocket.o handler.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -o $@ $^
 
 aesdsocket.o: aesdsocket.c aesdsocket.h handler.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -c $<
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -c $<
 
 handler.o: handler.c handler.h
-	$(CC) $(CFLAGS) $(LDFLAGS) -c $<
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -c $<
 
 clean:
 	rm -f aesdsocket aesdsocket.o handler.o
