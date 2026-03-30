@@ -26,5 +26,7 @@ modules:
 endif
 
 clean:
-	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions
+	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions ioctl_test
 
+ioctl_test: ioctl_test.c
+	gcc -g -Wall -o ioctl_test ioctl_test.c
