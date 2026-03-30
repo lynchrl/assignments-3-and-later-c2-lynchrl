@@ -44,15 +44,67 @@ int aesd_release(struct inode *inode, struct file *filp)
 
 long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-    long retval = 0;
     PDEBUG("ioctl cmd %u", cmd);
-    /**
-     * TODO: handle ioctl
-     */
+    long retval = 0;
+    struct aesd_dev *dev = filp->private_data;
     if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC)
         return -ENOTTY;
     if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR)
         return -ENOTTY;
+
+    switch (cmd)
+    {
+    case AESDCHAR_IOCSEEKTO:
+    {
+        struct aesd_seekto seekto;
+        if (copy_from_user(&seekto, (const void __user *)arg, sizeof(seekto)))
+        {
+            return -EFAULT;
+        }
+        if (mutex_lock_interruptible(&dev->lock))
+        {
+            return -ERESTARTSYS;
+        }
+
+        // Validate write_cmd and write_cmd_offset
+        if (seekto.write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
+        {
+            retval = -EINVAL;
+            goto aesd_ioctl_cleanup;
+        }
+        struct aesd_buffer_entry *entry = &dev->buffer.entry[seekto.write_cmd];
+        if (entry->buffptr == NULL)
+        {
+            retval = -EINVAL;
+            goto aesd_ioctl_cleanup;
+        }
+        if (seekto.write_cmd_offset > entry->size)
+        {
+            retval = -EINVAL;
+            goto aesd_ioctl_cleanup;
+        }
+
+        uint8_t index;
+        size_t char_offset = 0;
+        struct aesd_buffer_entry *current_entry;
+        AESD_CIRCULAR_BUFFER_FOREACH(current_entry, &dev->buffer, index)
+        {
+            if (index == seekto.write_cmd)
+            {
+                char_offset += seekto.write_cmd_offset;
+                break;
+            }
+            char_offset += current_entry->size;
+        }
+        filp->f_pos = char_offset;
+        PDEBUG("ioctl seek to write_cmd %u offset %u char_offset %zu", seekto.write_cmd, seekto.write_cmd_offset, char_offset);
+        break;
+    }
+    default:
+        return -ENOTTY;
+    }
+aesd_ioctl_cleanup:
+    mutex_unlock(&dev->lock);
     return retval;
 }
 
