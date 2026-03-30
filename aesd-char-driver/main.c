@@ -65,21 +65,26 @@ long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         {
             return -ERESTARTSYS;
         }
+        PDEBUG("ioctl seek to write_cmd %u offset %u", seekto.write_cmd, seekto.write_cmd_offset);
 
         // Validate write_cmd and write_cmd_offset
         if (seekto.write_cmd >= AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
         {
+            PDEBUG("invalid write_cmd %u. Must be between 0 and %u", seekto.write_cmd, AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - 1);
             retval = -EINVAL;
             goto aesd_ioctl_cleanup;
         }
         struct aesd_buffer_entry *entry = &dev->buffer.entry[seekto.write_cmd];
         if (entry->buffptr == NULL)
         {
+            PDEBUG("write_cmd %u has no entry", seekto.write_cmd);
             retval = -EINVAL;
             goto aesd_ioctl_cleanup;
         }
-        if (seekto.write_cmd_offset > entry->size)
+        if (seekto.write_cmd_offset >= entry->size)
         {
+            PDEBUG("invalid write_cmd_offset %u for write_cmd %u. Must be between 0 and %zu",
+                   seekto.write_cmd_offset, seekto.write_cmd, entry->size - 1);
             retval = -EINVAL;
             goto aesd_ioctl_cleanup;
         }
