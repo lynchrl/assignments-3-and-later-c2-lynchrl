@@ -18,6 +18,7 @@
 #include <linux/cdev.h>
 #include <linux/fs.h> // file_operations
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 int aesd_major = 0; // use dynamic major
 int aesd_minor = 0;
 
@@ -29,9 +30,6 @@ struct aesd_dev aesd_device;
 int aesd_open(struct inode *inode, struct file *filp)
 {
     PDEBUG("open");
-    /**
-     * TODO: handle open
-     */
     struct aesd_dev *dev;
     dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data = dev;
@@ -41,10 +39,48 @@ int aesd_open(struct inode *inode, struct file *filp)
 int aesd_release(struct inode *inode, struct file *filp)
 {
     PDEBUG("release");
-    /**
-     * TODO: handle release
-     */
     return 0;
+}
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    long retval = 0;
+    PDEBUG("ioctl cmd %u", cmd);
+    /**
+     * TODO: handle ioctl
+     */
+    if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC)
+        return -ENOTTY;
+    if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR)
+        return -ENOTTY;
+    return retval;
+}
+
+loff_t aesd_circular_buffer_size(struct aesd_circular_buffer *buffer)
+{
+    size_t size = 0;
+    uint8_t index;
+    struct aesd_buffer_entry *entry;
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, buffer, index)
+    {
+        size += entry->size;
+    }
+    return size;
+}
+
+loff_t aesd_llseek(struct file *filp, loff_t offset, int whence)
+{
+    PDEBUG("llseek offset %lld whence %d", offset, whence);
+    loff_t newpos;
+    struct aesd_dev *dev = filp->private_data;
+    if (mutex_lock_interruptible(&dev->lock))
+    {
+        return -ERESTARTSYS;
+    }
+    newpos = fixed_size_llseek(filp, offset, whence, aesd_circular_buffer_size(&dev->buffer));
+    PDEBUG("newpos %lld", newpos);
+    mutex_unlock(&dev->lock);
+    return newpos;
 }
 
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
@@ -172,6 +208,8 @@ struct file_operations aesd_fops = {
     .owner = THIS_MODULE,
     .read = aesd_read,
     .write = aesd_write,
+    .llseek = aesd_llseek,
+    .unlocked_ioctl = aesd_ioctl,
     .open = aesd_open,
     .release = aesd_release,
 };
