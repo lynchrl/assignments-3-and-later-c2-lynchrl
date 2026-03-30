@@ -199,6 +199,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     {
         retval = count;
     }
+    *f_pos += retval;
 write_cleanup:
     mutex_unlock(&dev->lock);
     return retval;
