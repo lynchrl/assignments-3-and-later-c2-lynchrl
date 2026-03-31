@@ -80,6 +80,11 @@ void *handle_connection(void *arg)
                     syslog(LOG_USER | LOG_ERR, "ioctl failed with error: %d", ioctl_result);
                     break;
                 }
+                if (write_to_client(fd, conn_info->clfd) != 0)
+                {
+                    syslog(LOG_USER | LOG_ERR, "Error writing to client after seek command");
+                    break;
+                }
             }
             else
             {
