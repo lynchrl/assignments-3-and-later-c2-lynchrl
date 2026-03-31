@@ -30,6 +30,17 @@ void *handle_connection(void *arg)
     }
     size_t data_len = 0;
 
+    int fd = open(FILENAME, O_RDONLY);
+    if (fd < 0)
+    {
+        perror("open");
+        syslog(LOG_USER | LOG_ERR, "Error opening file (%s) [%s]", FILENAME, strerror(errno));
+        close(conn_info->clfd);
+        free(data_buffer);
+        conn_info->done = true;
+        return NULL;
+    }
+
     // Read data from client and write to file
     while ((n = recv(conn_info->clfd, read_buffer, BUFFER_SIZE - 1, 0)) > 0)
     {
@@ -49,6 +60,32 @@ void *handle_connection(void *arg)
         memcpy(data_buffer + data_len, read_buffer, n);
         data_len += n;
         data_buffer[data_len] = '\0'; // Null-terminate for safety in string operations
+
+        if (strncmp(data_buffer, SEEKTO, strlen(SEEKTO)) == 0)
+        {
+            // Handle seek command
+            char *seek_args = data_buffer + strlen(SEEKTO);
+            int write_cmd, write_cmd_offset;
+            if (sscanf(seek_args, "%d,%d", &write_cmd, &write_cmd_offset) == 2)
+            {
+                syslog(LOG_USER | LOG_DEBUG, "Received seek command: write_cmd=%d, write_cmd_offset=%d", write_cmd, write_cmd_offset);
+                // TODO: do the ioctl
+            }
+            else
+            {
+                syslog(LOG_USER | LOG_ERR, "Invalid seek command format: %s", seek_args);
+            }
+            // Reset the data buffer after processing the command
+            data_len = 0;
+            free(data_buffer);
+            data_buffer = malloc(BUFFER_SIZE);
+            if (data_buffer == NULL)
+            {
+                perror("malloc new data_buffer after seek command");
+                syslog(LOG_USER | LOG_ERR, "Error allocating buffer [%s]", strerror(errno));
+                break;
+            }
+        }
 
         // If we encounter a newline character, write the data "packet" to file and reset the buffer.
         if (memchr(data_buffer, '\n', data_len) != NULL)
@@ -81,16 +118,6 @@ void *handle_connection(void *arg)
             }
 
             // Write full file contents back to client.
-            int fd = open(FILENAME, O_RDONLY);
-            if (fd < 0)
-            {
-                perror("open");
-                syslog(LOG_USER | LOG_ERR, "Error opening file (%s) [%s]", FILENAME, strerror(errno));
-                close(conn_info->clfd);
-                free(data_buffer);
-                conn_info->done = true;
-                return NULL;
-            }
             while ((n = read(fd, read_buffer, BUFFER_SIZE)) > 0)
             {
                 if (n < 0)
