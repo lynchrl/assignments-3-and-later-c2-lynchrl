@@ -10,6 +10,7 @@
 #include <sys/types.h>
 
 #include "handler.h"
+#include "aesd_ioctl.h"
 
 void *handle_connection(void *arg)
 {
@@ -69,7 +70,16 @@ void *handle_connection(void *arg)
             if (sscanf(seek_args, "%d,%d", &write_cmd, &write_cmd_offset) == 2)
             {
                 syslog(LOG_USER | LOG_DEBUG, "Received seek command: write_cmd=%d, write_cmd_offset=%d", write_cmd, write_cmd_offset);
-                // TODO: do the ioctl
+                struct aesd_seekto seekto = {
+                    .write_cmd = (uint32_t)write_cmd,
+                    .write_cmd_offset = (uint32_t)write_cmd_offset};
+                int ioctl_result = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+                if (ioctl_result != 0)
+                {
+                    perror("ioctl");
+                    syslog(LOG_USER | LOG_ERR, "ioctl failed with error: %d", ioctl_result);
+                    break;
+                }
             }
             else
             {
