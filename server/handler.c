@@ -85,6 +85,7 @@ void *handle_connection(void *arg)
                 syslog(LOG_USER | LOG_ERR, "Error allocating buffer [%s]", strerror(errno));
                 break;
             }
+            continue;
         }
 
         // If we encounter a newline character, write the data "packet" to file and reset the buffer.
@@ -118,25 +119,14 @@ void *handle_connection(void *arg)
             }
 
             // Write full file contents back to client.
-            while ((n = read(fd, read_buffer, BUFFER_SIZE)) > 0)
+            if (write_to_client(fd, conn_info->clfd) != 0)
             {
-                if (n < 0)
-                {
-                    perror("read");
-                    syslog(LOG_USER | LOG_ERR, "Error reading file (%s) [%s]", FILENAME, strerror(errno));
-                    break;
-                }
-                // printf("Sending <%s> to client\n", read_buffer);
-                ssize_t sent = send(conn_info->clfd, read_buffer, n, 0);
-                if (sent != n)
-                {
-                    syslog(LOG_USER | LOG_ERR, "Read (%ld) and send (%ld) mismatch", n, sent);
-                    break;
-                }
+                syslog(LOG_USER | LOG_ERR, "Error writing to client");
+                break;
             }
-            close(fd);
         }
     }
+    close(fd);
     free(data_buffer);
     if (n < 0)
     {
@@ -151,6 +141,29 @@ void *handle_connection(void *arg)
     syslog(LOG_USER | LOG_DEBUG, "Closed connection from %s", inet_ntoa(conn_info->cli_addr.sin_addr));
     conn_info->done = true;
     return NULL;
+}
+
+int write_to_client(int fd, int clfd)
+{
+    char read_buffer[BUFFER_SIZE];
+    ssize_t n;
+    while ((n = read(fd, read_buffer, BUFFER_SIZE)) > 0)
+    {
+        if (n < 0)
+        {
+            perror("read");
+            syslog(LOG_USER | LOG_ERR, "Error reading file (%s) [%s]", FILENAME, strerror(errno));
+            return -1;
+        }
+        // printf("Sending <%s> to client\n", read_buffer);
+        ssize_t sent = send(clfd, read_buffer, n, 0);
+        if (sent != n)
+        {
+            syslog(LOG_USER | LOG_ERR, "Read (%ld) and send (%ld) mismatch", n, sent);
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int append_packet(const char *fname, const char *buf, size_t len)
